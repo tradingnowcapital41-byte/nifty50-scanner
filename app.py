@@ -2,9 +2,10 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 from datetime import datetime
+import pytz
 from streamlit_autorefresh import st_autorefresh
 
-# 1. Page Config & Professional Theme
+# 1. Page Config & Professional Dark Theme
 st.set_page_config(
     page_title="Pharma2Tech | Alpha Scanner", 
     page_icon="📊", 
@@ -21,11 +22,11 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 2. Auto-Refresh Setup (Triggers every 60 seconds automatically for LIVE tracking)
+# Auto-Refresh Setup (Every 60 seconds for live tracking)
 st_autorefresh(interval=60 * 1000, key="datarefresh")
 
-st.title("📊 Alpha Range Scanner")
-st.caption("Advanced 5-Minute Opening Range & Liquidity Sweep Dashboard")
+st.title("📊 Alpha Liquidity Scanner")
+st.caption("Real-time 5-Minute Opening Range Liquidity Sweep Monitor with Timestamp")
 
 # 50 Component Stocks
 STOCKS = [
@@ -41,7 +42,6 @@ STOCKS = [
     "LICHSGFIN.NS", "HEROMOTOCO.NS", "EXIDEIND.NS", "ASHOKLEY.NS", "SONACOMS.NS"
 ]
 
-# Cache engine for smooth requests
 @st.cache_data(ttl=30)
 def fetch_market_data():
     try:
@@ -49,10 +49,13 @@ def fetch_market_data():
     except:
         return None
 
-# Top status layout
-col_time, col_empty = st.columns([1, 3])
+# IST Time Conversion Helper
+ist = pytz.timezone('Asia/Kolkata')
+current_time_ist = datetime.now(ist).strftime('%H:%M:%S')
+
+col_time, _ = st.columns([1, 3])
 with col_time:
-    st.info(f"⏱️ System Time: {datetime.now().strftime('%H:%M:%S')}")
+    st.info(f"⏱️ System Time (IST): {current_time_ist}")
 
 results = []
 
@@ -63,7 +66,7 @@ with st.spinner("Analyzing structural data blocks..."):
         available_dates = pd.to_datetime(bulk_data.index).date
         latest_trading_day = available_dates[-1]
         
-        st.markdown(f"📡 **Active Session:** {latest_trading_day.strftime('%Y-%m-%d')} (Live Feed Auto-Refreshes)")
+        st.markdown(f"📡 **Active Session:** {latest_trading_day.strftime('%Y-%m-%d')} (Live Tracking Enabled)")
         
         for stock in STOCKS:
             try:
@@ -78,74 +81,62 @@ with st.spinner("Analyzing structural data blocks..."):
                     if df_today.empty:
                         continue
                         
-                    # Core Strategy Calculations
+                    # Get First 5-min Candle Range
                     first_candle = df_today.iloc[0]
                     oHigh = float(first_candle['High'])
                     oLow = float(first_candle['Low'])
                     
-                    bSweep, sSweep = False, False
-                    tLow, tHigh = 0.0, 0.0
                     current_status = "Scanning"
+                    event_time = "N/A"
                     
+                    # Track Sweep Formations and log the exact time
                     for idx in range(1, len(df_today)):
                         row = df_today.iloc[idx]
                         c_close = float(row['Close'])
                         c_high = float(row['High'])
                         c_low = float(row['Low'])
                         
-                        if c_high > oHigh and c_close <= oHigh and not sSweep:
-                            sSweep = True
-                            tLow = c_low
-                            current_status = "Bearish Sweep Formed"
+                        # Get formatted candle time in IST
+                        candle_time = row.name.astimezone(ist).strftime('%H:%M') if hasattr(row.name, 'astimezone') else row.name.strftime('%H:%M')
+                        
+                        # BEARISH SWEEP (Sell Plan): High crosses oHigh but closes inside/below it
+                        if c_high > oHigh and c_close <= oHigh:
+                            current_status = "BEARISH SWEEP (SELL PLAN)"
+                            event_time = candle_time
                             
-                        if c_low < oLow and c_close >= oLow and not bSweep:
-                            bSweep = True
-                            tHigh = c_high
-                            current_status = "Bullish Sweep Formed"
-                            
-                        if sSweep and tLow > 0.0 and c_close < tLow:
-                            current_status = "SELL SIGNAL CONFIRMED"
-                        if bSweep and tHigh > 0.0 and c_close > tHigh:
-                            current_status = "BUY SIGNAL CONFIRMED"
+                        # BULLISH SWEEP (Buy Plan): Low crosses oLow but closes inside/above it
+                        if c_low < oLow and c_close >= oLow:
+                            current_status = "BULLISH SWEEP (BUY PLAN)"
+                            event_time = candle_time
                             
                     if current_status != "Scanning":
                         results.append({
                             "Ticker": stock.replace(".NS", ""),
-                            "Market Structure Status": current_status
+                            "Liquidity Event": current_status,
+                            "Event Time (IST)": event_time
                         })
             except:
                 continue
 
-# Render Modern Grid Interface
+# Render Modern Table Interface
 if results:
     res_df = pd.DataFrame(results)
     
-    # Calculate quick statistics
-    total_triggers = len(res_df)
-    confirmed_signals = len(res_df[res_df["Market Structure Status"].str.contains("CONFIRMED")])
-    
-    col_m1, col_m2 = st.columns(2)
-    with col_m1:
-        st.metric("Total Active Watches", total_triggers)
-    with col_m2:
-        st.metric("Confirmed Executions", confirmed_signals)
+    # Calculate quick metrics
+    total_sweeps = len(res_df)
+    st.metric("Total Liquidity Sweeps", total_sweeps)
         
-    # Micro-styling structure definitions
     def apply_premium_color(val):
-        if "BUY SIGNAL" in val:
+        if "BULLISH" in val:
             return 'background-color: #1e7e34; color: #ffffff; font-weight: bold; border-radius: 4px;'
-        elif "SELL SIGNAL" in val:
+        elif "BEARISH" in val:
             return 'background-color: #bd2130; color: #ffffff; font-weight: bold; border-radius: 4px;'
-        elif "Bullish" in val:
-            return 'background-color: #28a745; color: #ffffff; opacity: 0.8;'
-        elif "Bearish" in val:
-            return 'background-color: #dc3545; color: #ffffff; opacity: 0.8;'
         return ''
         
     st.dataframe(
-        res_df.style.map(apply_premium_color, subset=['Market Structure Status']), 
+        res_df.style.map(apply_premium_color, subset=['Liquidity Event']), 
         use_container_width=True,
         hide_index=True
     )
 else:
-    st.info("🎯 Absolute equilibrium. No structural liquidity sweeps or directional breaks detected at this time.")
+    st.info("🎯 Absolute equilibrium. No opening range liquidity sweeps detected at this time.")
