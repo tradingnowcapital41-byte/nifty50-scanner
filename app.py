@@ -25,7 +25,6 @@ STOCKS = [
 @st.cache_data(ttl=60)
 def fetch_bulk_data():
     try:
-        # Fetching data without complex grouping to avoid multi-index errors
         data = yf.download(tickers=STOCKS, period="2d", interval="5m", group_by='ticker', progress=False)
         return data
     except Exception as e:
@@ -43,7 +42,6 @@ with st.spinner("सर्व ५० स्टॉक्स स्कॅन क�
         
         for stock in STOCKS:
             try:
-                # Safely slice data for single stock from multi-index dataframe
                 if stock in bulk_data.columns.levels[0]:
                     df = bulk_data[stock].copy().dropna()
                     
@@ -74,25 +72,25 @@ with st.spinner("सर्व ५० स्टॉक्स स्कॅन क�
                         c_high = float(row['High'])
                         c_low = float(row['Low'])
                         
-                        # Short Sweep Logic
+                        # Short Sweep Logic (Fixed := to =)
                         if c_high > oHigh and c_close <= oHigh and not sSweep:
-                            sSweep := True
-                            tLow := c_low
-                            current_status := "❌ Sweep Formed (Bearish)"
+                            sSweep = True
+                            tLow = c_low
+                            current_status = "❌ Sweep Formed (Bearish)"
                             
-                        # Long Sweep Logic
+                        # Long Sweep Logic (Fixed := to =)
                         if c_low < oLow and c_close >= oLow and not bSweep:
-                            bSweep := True
-                            tHigh := c_high
-                            current_status := "🟢 Sweep Formed (Bullish)"
+                            bSweep = True
+                            tHigh = c_high
+                            current_status = "🟢 Sweep Formed (Bullish)"
                             
                         # Trigger Line Cross Logic
                         if sSweep and tLow > 0.0 and c_close < tLow:
-                            current_status := "🚨 SELL SIGNAL VALID"
+                            current_status = "🚨 SELL SIGNAL VALID"
                         if bSweep and tHigh > 0.0 and c_close > tHigh:
-                            current_status := "🔥 BUY SIGNAL VALID"
+                            current_status = "🔥 BUY SIGNAL VALID"
                             
-                    # Show only triggered stocks (Skip 'Waiting')
+                    # Show only triggered stocks
                     if current_status != "Waiting":
                         results.append({
                             "Stock Name": stock.replace(".NS", ""),
@@ -105,7 +103,6 @@ with st.spinner("सर्व ५० स्टॉक्स स्कॅन क�
 if results:
     res_df = pd.DataFrame(results)
     
-    # Styled matrix generator
     def style_signals(val):
         if "VALID" in val:
             return 'background-color: #2ecc71; color: white; font-weight: bold;'
@@ -113,7 +110,6 @@ if results:
             return 'background-color: #f39c12; color: white;'
         return ''
         
-    # Updated .map instead of .applymap for modern Pandas versions
     st.dataframe(res_df.style.map(style_signals, subset=['Signal Status']), use_container_width=True)
 else:
     st.info("🎯 सध्या कोणत्याही स्टॉकमध्ये Sweep किंवा Signal तयार झालेला नाही. मार्केट ट्रॅक सुरू आहे!")
