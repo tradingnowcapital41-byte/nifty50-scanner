@@ -7,7 +7,7 @@ from streamlit_autorefresh import st_autorefresh
 
 # 1. Page Configuration & Elite Dark Terminal UI
 st.set_page_config(
-    page_title="Pharma2Tech Alpha", 
+    page_title="Alpha Terminal", 
     page_icon="⚡", 
     layout="wide"
 )
