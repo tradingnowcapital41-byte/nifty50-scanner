@@ -6,9 +6,8 @@ from datetime import datetime
 # Page Configuration
 st.set_page_config(page_title="Pharma2Tech Stock Scanner", layout="wide")
 st.title("📊 Live 5-Min Strategy Scanner (Nifty 50)")
-st.write(f"Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-# Image मधून घेतलेले ५० मुख्य स्टॉक्स (Yahoo Finance Format: .NS)
+# 50 Stocks List (.NS for Yahoo Finance)
 STOCKS = [
     "RELIANCE.NS", "INFY.NS", "TCS.NS", "ICICIBANK.NS", "HCLTECH.NS", 
     "BHARTIARTL.NS", "M&M.NS", "MARUTI.NS", "SBIN.NS", "TECHM.NS", 
@@ -22,79 +21,90 @@ STOCKS = [
     "LICHSGFIN.NS", "HEROMOTOCO.NS", "EXIDEIND.NS", "ASHOKLEY.NS", "SONACOMS.NS"
 ]
 
-def check_strategy(ticker):
+# Optimize Data Fetching: Multi-stock bulk download (Fast & No Timeout)
+@st.cache_data(ttl=60)  # Cache data for 60 seconds to prevent getting blocked
+def fetch_bulk_data():
     try:
-        # ५ मिनिटांचा डेटा डाऊनलोड करणे (आजचा आणि कालचा)
-        df = yf.download(tickers=ticker, period="2d", interval="5m", progress=False)
-        if df.empty or len(df) < 5:
-            return None
-        
-        # आजचा डेटा वेगळा करणे
-        df['Date'] = df.index.date
-        today = datetime.now().date()
-        df_today = df[df['Date'] == today]
-        
-        if df_today.empty:
-            return None
-            
-        # ०९:१५ ची पहिली ५ मिनिटांची कॅंडल शोधणे
-        first_candle = df_today.iloc[0]
-        oHigh = first_candle['High'].values[0] if isinstance(first_candle['High'], pd.Series) else first_candle['High']
-        oLow = first_candle['Low'].values[0] if isinstance(first_candle['Low'], pd.Series) else first_candle['Low']
-        
-        bSweep = False
-        sSweep = False
-        tLow = None
-        tHigh = None
-        current_status = "Waiting"
-        
-        # पहिल्या कॅंडल सोडून बाकी कॅंडल्सवर लूप फिरवणे
-        for idx in range(1, len(df_today)):
-            row = df_today.iloc[idx]
-            c_close = row['Close'].values[0] if isinstance(row['Close'], pd.Series) else row['Close']
-            c_high = row['High'].values[0] if isinstance(row['High'], pd.Series) else row['High']
-            c_low = row['Low'].values[0] if isinstance(row['Low'], pd.Series) else row['Low']
-            
-            # Short Sweep Logic
-            if c_high > oHigh and c_close <= oHigh and not sSweep:
-                sSweep = True
-                tLow = c_low
-                current_status = "❌ Sweep Formed (Bearish)"
-                
-            # Long Sweep Logic
-            if c_low < oLow and c_close >= oLow and not bSweep:
-                bSweep = True
-                tHigh = c_high
-                current_status = "🟢 Sweep Formed (Bullish)"
-                
-            # Trigger Cross Logic (Final Signal)
-            if sSweep and tLow and c_close < tLow:
-                current_status = "🚨 SELL SIGNAL VALID"
-            if bSweep and tHigh and c_close > tHigh:
-                current_status = "🔥 BUY SIGNAL VALID"
-                
-        return current_status
-    except:
+        data = yf.download(tickers=STOCKS, period="2d", interval="5m", group_by='ticker', progress=False)
+        return data
+    except Exception as e:
+        st.error(f"डेटा मिळवताना अडचण आली: {e}")
         return None
 
-# UI Table साठी डेटा तयार करणे
+# App refresh time info
+st.write(f"Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
 results = []
 
-with st.spinner("सर्व ५० स्टॉक्स स्कॅन होत आहेत... कृपया थांबा..."):
-    for stock in STOCKS:
-        status = check_strategy(stock)
-        # तुझी अट: फक्त सिग्नल्स असलेले (Waiting नसलेले) स्टॉक्स दाखवणे
-        if status and status != "Waiting":
-            results.append({
-                "Stock Name": stock.replace(".NS", ""),
-                "Signal Status": status
-            })
+with st.spinner("सर्व ५० स्टॉक्स एकाच वेळी स्कॅन होत आहेत..."):
+    bulk_data = fetch_bulk_data()
+    
+    if bulk_data is not None and not bulk_data.empty:
+        today = datetime.now().date()
+        
+        for stock in STOCKS:
+            try:
+                # Extract individual stock dataframe from bulk data safely
+                if stock in bulk_data.columns.levels[0]:
+                    df = bulk_data[stock].dropna()
+                    if df.empty or len(df) < 2:
+                        continue
+                        
+                    df['Date'] = df.index.date
+                    df_today = df[df['Date'] == today]
+                    
+                    if df_today.empty:
+                        continue
+                        
+                    # Strategy logic: Get first 5-min candle
+                    first_candle = df_today.iloc[0]
+                    oHigh = float(first_candle['High'])
+                    oLow = float(first_candle['Low'])
+                    
+                    bSweep = False
+                    sSweep = False
+                    tLow = None
+                    tHigh = None
+                    current_status = "Waiting"
+                    
+                    # Loop through subsequent candles
+                    for idx in range(1, len(df_today)):
+                        row = df_today.iloc[idx]
+                        c_close = float(row['Close'])
+                        c_high = float(row['High'])
+                        c_low = float(row['Low'])
+                        
+                        # Short Sweep Logic
+                        if c_high > oHigh and c_close <= oHigh and not sSweep:
+                            sSweep = True
+                            tLow = c_low
+                            current_status = "❌ Sweep Formed (Bearish)"
+                            
+                        # Long Sweep Logic
+                        if c_low < oLow and c_close >= oLow and not bSweep:
+                            bSweep = True
+                            tHigh = c_high
+                            current_status = "🟢 Sweep Formed (Bullish)"
+                            
+                        # Trigger Cross Logic
+                        if sSweep and tLow and c_close < tLow:
+                            current_status = "🚨 SELL SIGNAL VALID"
+                        if bSweep and tHigh and c_close > tHigh:
+                            current_status = "🔥 BUY SIGNAL VALID"
+                            
+                    # Add to list if it has active signal status
+                    if current_status != "Waiting":
+                        results.append({
+                            "Stock Name": stock.replace(".NS", ""),
+                            "Signal Status": current_status
+                        })
+            except:
+                continue
 
-# निकाल डिस्प्ले करणे
+# Display Results UI Table
 if results:
     res_df = pd.DataFrame(results)
     
-    # स्टाईलिंग (रंग भरणे)
     def style_signals(val):
         if "VALID" in val:
             return 'background-color: #2ecc71; color: white; font-weight: bold;'
@@ -106,6 +116,6 @@ if results:
 else:
     st.info("🎯 सध्या कोणत्याही स्टॉकमध्ये Sweep किंवा Signal तयार झालेला नाही. मार्केट शांत आहे!")
 
-# ऑटो रिफ्रेश बटन
+# Auto-Refresh button
 if st.button("🔄 मॅन्युअली रिफ्रेश करा"):
     st.rerun()
