@@ -5,28 +5,31 @@ from datetime import datetime
 import pytz
 from streamlit_autorefresh import st_autorefresh
 
-# 1. Page Configuration & Dark Theme UI
+# 1. Page Configuration & Elite Dark Terminal UI
 st.set_page_config(
-    page_title="Pharma2Tech | Alpha Multi-Scanner", 
-    page_icon="📊", 
+    page_title="Pharma2Tech Alpha", 
+    page_icon="⚡", 
     layout="wide"
 )
 
+# Custom Institutional CSS Styling
 st.markdown("""
     <style>
-    .main { background-color: #0e1117; }
-    div[data-testid="stMetricValue"] { font-size: 24px; font-weight: bold; }
-    h1 { color: #ffffff; font-family: 'Inter', sans-serif; }
+    .main { background-color: #0b0e14; }
+    div[data-testid="stMetricValue"] { font-size: 26px; font-weight: 700; color: #ffffff; }
+    .stAlert { background-color: #161b22; border: 1px solid #30363d; }
+    h1 { font-family: 'Inter', sans-serif; font-weight: 800; letter-spacing: -0.5px; }
+    div[data-testid="stDataFrame"] { border: 1px solid #30363d; border-radius: 6px; }
     </style>
 """, unsafe_allow_html=True)
 
-# Auto-Refresh Dashboard Every 60 seconds
-st_autorefresh(interval=60 * 1000, key="datarefresh")
+# Auto-Refresh Dashboard Every 60 seconds for live tracking
+st_autorefresh(interval=60 * 1000, key="alpha_refresh")
 
-st.title("📊 Alpha Liquidity Sweep Tracker")
-st.caption("Accurate Multi-Signal 5-Min Opening Range Scanner with Precision Timestamps & Reference Levels")
+st.title("⚡ Alpha Terminal")
+st.caption("Institutional Grade Volatility & Liquidity Flow Monitor")
 
-# Nifty 50 Active Stocks
+# 50 Component Stocks
 STOCKS = [
     "RELIANCE.NS", "INFY.NS", "TCS.NS", "ICICIBANK.NS", "HCLTECH.NS", 
     "BHARTIARTL.NS", "M&M.NS", "MARUTI.NS", "SBIN.NS", "TECHM.NS", 
@@ -43,28 +46,24 @@ STOCKS = [
 @st.cache_data(ttl=30)
 def fetch_market_data():
     try:
-        # Fetching 5 days to safely fallback to latest trading session
         return yf.download(tickers=STOCKS, period="5d", interval="5m", group_by='ticker', progress=False)
     except:
         return None
 
-# Standard Time Zone Fix (Kolkata IST)
+# Time Zone Configurations (IST)
 tz_ist = pytz.timezone('Asia/Kolkata')
-current_time_ist = datetime.now(tz_ist).strftime('%I:%M:%S %p')
+current_time_ist = datetime.now(tz_ist).strftime('%I:%M %p')
 
-st.info(f"⏱️ Dashboard Last Updated (IST 12-Hour): {current_time_ist}")
+st.info(f"🟢 Server Connected | Live Feed Sync: {current_time_ist}")
 
 results = []
 
-with st.spinner("Processing structural order books and charts..."):
+with st.spinner("Syncing matrix..."):
     bulk_data = fetch_market_data()
     
     if bulk_data is not None and not bulk_data.empty:
-        # Step 1: Detect the exact latest active market date in data
         sample_index = bulk_data.index
         latest_trading_day = pd.to_datetime(sample_index).date[-1]
-        
-        st.markdown(f"📡 **Active Feed Session:** {latest_trading_day.strftime('%Y-%m-%d')}")
         
         for stock in STOCKS:
             try:
@@ -73,72 +72,65 @@ with st.spinner("Processing structural order books and charts..."):
                     if df.empty or len(df) < 2:
                         continue
                     
-                    # Convert yfinance international index timestamps to clear India IST
                     df.index = df.index.tz_convert('Asia/Kolkata')
                     df['Date'] = df.index.date
                     
-                    # Filter data strictly for the current active day
                     df_today = df[df['Date'] == latest_trading_day]
                     if df_today.empty:
                         continue
                     
-                    # Extract 1st 5-min reference range boundaries
+                    # 1st Candle Range (Hidden from UI)
                     first_candle = df_today.iloc[0]
                     oHigh = float(first_candle['High'])
                     oLow = float(first_candle['Low'])
                     
-                    # Loop through all subsequent candles to capture EVERY valid signal
                     for idx in range(1, len(df_today)):
                         row = df_today.iloc[idx]
                         c_close = float(row['Close'])
                         c_high = float(row['High'])
                         c_low = float(row['Low'])
                         
-                        # Format timestamp into user preferred 12-hour clock (e.g., 10:15 AM)
                         candle_time_12h = row.name.strftime('%I:%M %p')
                         
-                        # A. BEARISH SWEEP (Sell Plan Logic)
+                        # Bearish Alert -> Pure Institutional Action Label
                         if c_high > oHigh and c_close <= oHigh:
                             results.append({
                                 "Ticker": stock.replace(".NS", ""),
-                                "Liquidity Event": "BEARISH SWEEP (SELL PLAN)",
-                                "Trigger Time (IST)": candle_time_12h,
-                                "Opening High Reference": round(oHigh, 2),
-                                "Opening Low Reference": round(oLow, 2),
-                                "Candle High/Low Reached": f"High: {round(c_high, 2)}"
+                                "Action": "SHORT",
+                                "Timestamp": candle_time_12h
                             })
                             
-                        # B. BULLISH SWEEP (Buy Plan Logic)
+                        # Bullish Alert -> Pure Institutional Action Label
                         if c_low < oLow and c_close >= oLow:
                             results.append({
                                 "Ticker": stock.replace(".NS", ""),
-                                "Liquidity Event": "BULLISH SWEEP (BUY PLAN)",
-                                "Trigger Time (IST)": candle_time_12h,
-                                "Opening High Reference": round(oHigh, 2),
-                                "Opening Low Reference": round(oLow, 2),
-                                "Candle High/Low Reached": f"Low: {round(c_low, 2)}"
+                                "Action": "LONG",
+                                "Timestamp": candle_time_12h
                             })
             except:
                 continue
 
-# Render Modern Visual Table Engine
+# Render Clean Professional Terminal UI
 if results:
-    # Sort results chronologically by token/time for structured viewing
     res_df = pd.DataFrame(results)
     
-    st.metric("Total Liquidity Events Logged", len(res_df))
+    # Quick Summary Statistics Block
+    st.metric("Total Active Triggers", len(res_df))
+    st.write("") # Spacer
         
-    def apply_premium_color(val):
-        if "BULLISH" in val:
-            return 'background-color: #1e7e34; color: #ffffff; font-weight: bold; border-radius: 4px;'
-        elif "BEARISH" in val:
-            return 'background-color: #bd2130; color: #ffffff; font-weight: bold; border-radius: 4px;'
+    # Micro-styling definition for absolute premium look
+    def apply_terminal_theme(val):
+        if "LONG" in val:
+            return 'background-color: #0e622b; color: #ffffff; font-weight: bold; text-align: center;'
+        elif "SHORT" in val:
+            return 'background-color: #842029; color: #ffffff; font-weight: bold; text-align: center;'
         return ''
         
+    # Render final ultra-clean table without index or internal logic reveal
     st.dataframe(
-        res_df.style.map(apply_premium_color, subset=['Liquidity Event']), 
+        res_df.style.map(apply_terminal_theme, subset=['Action']), 
         use_container_width=True,
         hide_index=True
     )
 else:
-    st.info("🎯 Absolute market equilibrium. No historical or live 5-min sweeps found for this session.")
+    st.info("🎯 Scanner Active | Waiting for directional structural breaks.")
