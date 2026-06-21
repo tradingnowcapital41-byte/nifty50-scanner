@@ -5,7 +5,7 @@ from datetime import datetime
 
 # Page Configuration
 st.set_page_config(page_title="Pharma2Tech Stock Scanner", layout="wide")
-st.title("📊 Live 5-Min Strategy Scanner (Nifty 50)")
+st.title("📊 Live & History 5-Min Strategy Scanner (Nifty 50)")
 
 # 50 Stocks List
 STOCKS = [
@@ -21,24 +21,30 @@ STOCKS = [
     "LICHSGFIN.NS", "HEROMOTOCO.NS", "EXIDEIND.NS", "ASHOKLEY.NS", "SONACOMS.NS"
 ]
 
-# Cache data to prevent API abuse and fast loading
+# Cache data for 60 seconds (Extended period to 5 days to safely fetch historical data)
 @st.cache_data(ttl=60)
 def fetch_bulk_data():
     try:
-        data = yf.download(tickers=STOCKS, period="2d", interval="5m", group_by='ticker', progress=False)
+        data = yf.download(tickers=STOCKS, period="5d", interval="5m", group_by='ticker', progress=False)
         return data
     except Exception as e:
         return None
 
-st.write(f"Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.write(f"App Checked At: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 results = []
 
-with st.spinner("सर्व ५० स्टॉक्स स्कॅन करत आहे... कृपया थांबा..."):
+with st.spinner("सर्व ५० स्टॉक्सचा ऐतिहासिक डेटा स्कॅन होत आहे..."):
     bulk_data = fetch_bulk_data()
     
     if bulk_data is not None and not bulk_data.empty:
-        today = datetime.now().date()
+        
+        # --- बदल: डेटा मधील सर्वात शेवटचा उपलब्ध ट्रेडिंग दिवस शोधणे ---
+        # यामुळे सुट्टीच्या दिवशी किंवा रात्री सुद्धा शेवटच्या ट्रेडिंग दिवसाचा (उदा. शुक्रवारचा) डेटा दिसेल
+        available_dates = pd.to_datetime(bulk_data.index).date
+        latest_trading_day = available_dates[-1] 
+        
+        st.success(f"📅 सध्या **{latest_trading_day.strftime('%Y-%m-%d')}** (Latest Trading Session) चा डेटा दाखवला जात आहे.")
         
         for stock in STOCKS:
             try:
@@ -49,12 +55,13 @@ with st.spinner("सर्व ५० स्टॉक्स स्कॅन क�
                         continue
                         
                     df['Date'] = df.index.date
-                    df_today = df[df['Date'] == today]
+                    # फक्त शेवटच्या ट्रेडिंग दिवसाचा डेटा फिल्टर करणे
+                    df_today = df[df['Date'] == latest_trading_day]
                     
                     if df_today.empty:
                         continue
                         
-                    # Strategy logic: Get first 5-min candle of the day
+                    # Strategy logic: Get first 5-min candle of that day
                     first_candle = df_today.iloc[0]
                     oHigh = float(first_candle['High'])
                     oLow = float(first_candle['Low'])
@@ -72,13 +79,13 @@ with st.spinner("सर्व ५० स्टॉक्स स्कॅन क�
                         c_high = float(row['High'])
                         c_low = float(row['Low'])
                         
-                        # Short Sweep Logic (Fixed := to =)
+                        # Short Sweep Logic
                         if c_high > oHigh and c_close <= oHigh and not sSweep:
                             sSweep = True
                             tLow = c_low
                             current_status = "❌ Sweep Formed (Bearish)"
                             
-                        # Long Sweep Logic (Fixed := to =)
+                        # Long Sweep Logic
                         if c_low < oLow and c_close >= oLow and not bSweep:
                             bSweep = True
                             tHigh = c_high
@@ -90,7 +97,7 @@ with st.spinner("सर्व ५० स्टॉक्स स्कॅन क�
                         if bSweep and tHigh > 0.0 and c_close > tHigh:
                             current_status = "🔥 BUY SIGNAL VALID"
                             
-                    # Show only triggered stocks
+                    # Show triggered stocks
                     if current_status != "Waiting":
                         results.append({
                             "Stock Name": stock.replace(".NS", ""),
@@ -112,7 +119,7 @@ if results:
         
     st.dataframe(res_df.style.map(style_signals, subset=['Signal Status']), use_container_width=True)
 else:
-    st.info("🎯 सध्या कोणत्याही स्टॉकमध्ये Sweep किंवा Signal तयार झालेला नाही. मार्केट ट्रॅक सुरू आहे!")
+    st.info("🎯 या दिवशी कोणत्याही स्टॉकमध्ये Sweep किंवा Signal तयार झालेला नव्हता.")
 
 if st.button("🔄 मॅन्युअली रिफ्रेश करा"):
     st.rerun()
